@@ -40,7 +40,7 @@ def get_user_index(tg_id):
     return None
 
 # ========== ОСНОВНЫЕ КОМАНДЫ ==========
-def start(update: Update, context):
+async def start(update: Update, context):
     """Обработчик команды /start"""
     tg_id = str(update.effective_user.id)
     
@@ -58,16 +58,16 @@ def start(update: Update, context):
         })
         save_users(users)
     
-    update.message.reply_text(
+    await update.message.reply_text(
         f"👋 Привет, {update.effective_user.first_name}!\n\n"
         f"Я FoodPlan бот. Помогу тебе с выбором блюд и планированием бюджета.\n\n"
         f"У тебя есть 3 бесплатных рецепта, затем нужно оформить подписку.",
         reply_markup=main_menu()
     )
 
-def help_command(update: Update, context):
+async def help_command(update: Update, context):
     """Обработчик команды /help"""
-    update.message.reply_text(
+    await update.message.reply_text(
         "📖 *Доступные команды:*\n\n"
         "/start - Запустить бота\n"
         "/help - Помощь\n"
@@ -81,32 +81,32 @@ def help_command(update: Update, context):
         parse_mode='Markdown'
     )
 
-def menu(update: Update, context):
+async def menu(update: Update, context):
     """Обработчик команды /menu - показать главное меню"""
-    update.message.reply_text("Главное меню:", reply_markup=main_menu())
+    await update.message.reply_text("Главное меню:", reply_markup=main_menu())
 
 # ========== ОБРАБОТЧИКИ КНОПОК ==========
-def button_handler(update: Update, context):
+async def button_handler(update: Update, context):
     """Обработчик всех callback_query (нажатий на кнопки)"""
     query = update.callback_query
-    query.answer()
+    await query.answer()
     data = query.data
     
     if data == "back_to_menu":
-        query.edit_message_text("Главное меню:", reply_markup=main_menu())
+        await query.edit_message_text("Главное меню:", reply_markup=main_menu())
     
     elif data == "admin_panel":
         # Проверка на админа
         if query.from_user.id not in ADMIN_IDS:
-            query.edit_message_text("⛔ У вас нет доступа к админ-панели.")
+            await query.edit_message_text("⛔ У вас нет доступа к админ-панели.")
             return
-        query.edit_message_text("👑 Админ-панель", reply_markup=admin_menu())
+        await query.edit_message_text("👑 Админ-панель", reply_markup=admin_menu())
     
     elif data == "set_price_filter":
         tg_id = str(query.from_user.id)
         user = get_user(tg_id)
         current_filter = user.get('price_filter') if user else None
-        query.edit_message_text(
+        await query.edit_message_text(
             "💸 *Настройка фильтра по цене*\n\n"
             "Выберите максимальную стоимость блюда:",
             parse_mode='Markdown',
@@ -114,7 +114,7 @@ def button_handler(update: Update, context):
         )
     
     elif data == "subscribe":
-        query.edit_message_text(
+        await query.edit_message_text(
             "💰 *Подписка на FoodPlan*\n\n"
             "Стоимость: 199 руб/месяц\n\n"
             "После оплаты вам станут доступны:\n"
@@ -129,7 +129,7 @@ def button_handler(update: Update, context):
     
     elif data == "favorites":
         # Пока заглушка
-        query.edit_message_text(
+        await query.edit_message_text(
             "⭐ *Избранное*\n\n"
             "Здесь будут сохранённые вами рецепты.\n\n"
             "Чтобы добавить рецепт в избранное, нажмите 🤍 под рецептом.",
@@ -139,7 +139,7 @@ def button_handler(update: Update, context):
     
     elif data == "random_recipe":
         # Пока заглушка
-        query.edit_message_text(
+        await query.edit_message_text(
             "🍽 *Случайный рецепт*\n\n"
             "Здесь будет случайный рецепт из вашей подборки.",
             parse_mode='Markdown',
@@ -157,17 +157,17 @@ def button_handler(update: Update, context):
         if user_index is not None:
             if price_value == "clear":
                 users[user_index]['price_filter'] = None
-                query.edit_message_text("✅ Фильтр по цене сброшен.", reply_markup=main_menu())
+                await query.edit_message_text("✅ Фильтр по цене сброшен.", reply_markup=main_menu())
             else:
                 users[user_index]['price_filter'] = int(price_value)
                 save_users(users)
-                query.edit_message_text(
+                await query.edit_message_text(
                     f"✅ Установлен фильтр: до {price_value} руб.",
                     reply_markup=main_menu()
                 )
     
     elif data == "cancel":
-        query.edit_message_text("Действие отменено.", reply_markup=main_menu())
+        await query.edit_message_text("Действие отменено.", reply_markup=main_menu())
 
 # ========== ЗАПУСК ==========
 def main():
