@@ -1,0 +1,45 @@
+[
+    {
+        "tg_id": "@linalleks",
+        "subscriber": false,
+        "allergy": false,
+        "current_recipe": 2,
+        "recipes_history": [
+            1,
+            2
+        ],
+        "favorite_recipes": [
+            1
+        ]
+    },
+    {
+        "tg_id": "@lesha_remark",
+        "subscriber": false,
+        "allergy": false,
+        "current_recipe": 2,
+        "recipes_history": [
+            2
+        ],
+        "favorite_recipes": []
+    },
+    {
+        "tg_id": "@doingmov",
+        "subscriber": false,
+        "allergy": false,
+        "current_recipe": 1,
+        "recipes_history": [
+            1
+        ],
+        "favorite_recipes": []
+    },
+    {
+        "tg_id": "@Gribojor",
+        "subscriber": false,
+        "allergy": false,
+        "current_recipe": 2,
+        "recipes_history": [
+            2
+        ],
+        "favorite_recipes": []
+    }
+]
