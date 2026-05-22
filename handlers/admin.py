@@ -9,7 +9,7 @@ from services.json_db import (
     save_recipes
 )
 
-from states.recipe_states import *
+from states.states import *
 
 
 async def add_recipe_start(
