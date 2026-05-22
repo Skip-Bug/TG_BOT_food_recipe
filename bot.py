@@ -1,193 +1,3 @@
-import json
-from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
-from telegram.ext import ConversationHandler
-
-from config import TOKEN, ADMIN_IDS
-from keyboards import main_menu, recipe_actions, price_filter_menu, admin_menu, back_button, cancel_button
-
-# ========== РАБОТА С JSON ==========
-def load_recipes():
-    with open('recipes.json', 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-def save_recipes(data):
-    with open('recipes.json', 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-def load_users():
-    with open('users.json', 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-def save_users(data):
-    with open('users.json', 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-def get_user(tg_id):
-    """Получить пользователя по tg_id (как строку)"""
-    users = load_users()
-    for user in users:
-        if user['tg_id'] == str(tg_id):
-            return user
-    return None
-
-def get_user_index(tg_id):
-    """Получить индекс пользователя в списке"""
-    users = load_users()
-    for i, user in enumerate(users):
-        if user['tg_id'] == str(tg_id):
-            return i
-    return None
-
-# ========== ОСНОВНЫЕ КОМАНДЫ ==========
-async def start(update: Update, context):
-    """Обработчик команды /start"""
-    tg_id = str(update.effective_user.id)
-    
-    # Проверяем, есть ли пользователь в БД
-    if get_user(tg_id) is None:
-        users = load_users()
-        users.append({
-            "tg_id": tg_id,
-            "subscriber": False,
-            "allergy": False,
-            "current_recipe": None,
-            "recipes_history": [],
-            "favorite_recipes": [],
-            "price_filter": None
-        })
-        save_users(users)
-    
-    await update.message.reply_text(
-        f"👋 Привет, {update.effective_user.first_name}!\n\n"
-        f"Я FoodPlan бот. Помогу тебе с выбором блюд и планированием бюджета.\n\n"
-        f"У тебя есть 3 бесплатных рецепта, затем нужно оформить подписку.",
-        reply_markup=main_menu()
-    )
-
-async def help_command(update: Update, context):
-    """Обработчик команды /help"""
-    await update.message.reply_text(
-        "📖 *Доступные команды:*\n\n"
-        "/start - Запустить бота\n"
-        "/help - Помощь\n"
-        "/menu - Показать главное меню\n\n"
-        "*Кнопки меню:*\n"
-        "🍽 Случайный рецепт - получить рецепт дня\n"
-        "⭐ Избранное - ваши сохранённые рецепты\n"
-        "💰 Подписка - оформить платную подписку\n"
-        "💸 Фильтр по цене - настроить бюджет\n"
-        "👑 Админ-панель - управление рецептами (только для админов)",
-        parse_mode='Markdown'
-    )
-
-async def menu(update: Update, context):
-    """Обработчик команды /menu - показать главное меню"""
-    await update.message.reply_text("Главное меню:", reply_markup=main_menu())
-
-# ========== ОБРАБОТЧИКИ КНОПОК ==========
-async def button_handler(update: Update, context):
-    """Обработчик всех callback_query (нажатий на кнопки)"""
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    
-    if data == "back_to_menu":
-        await query.edit_message_text("Главное меню:", reply_markup=main_menu())
-    
-    elif data == "admin_panel":
-        # Проверка на админа
-        if query.from_user.id not in ADMIN_IDS:
-            await query.edit_message_text("⛔ У вас нет доступа к админ-панели.")
-            return
-        await query.edit_message_text("👑 Админ-панель", reply_markup=admin_menu())
-    
-    elif data == "set_price_filter":
-        tg_id = str(query.from_user.id)
-        user = get_user(tg_id)
-        current_filter = user.get('price_filter') if user else None
-        await query.edit_message_text(
-            "💸 *Настройка фильтра по цене*\n\n"
-            "Выберите максимальную стоимость блюда:",
-            parse_mode='Markdown',
-            reply_markup=price_filter_menu(current_filter)
-        )
-    
-    elif data == "subscribe":
-        await query.edit_message_text(
-            "💰 *Подписка на FoodPlan*\n\n"
-            "Стоимость: 199 руб/месяц\n\n"
-            "После оплаты вам станут доступны:\n"
-            "✅ Безлимитные рецепты\n"
-            "✅ Избранное\n"
-            "✅ Фильтр по цене\n"
-            "✅ Планирование бюджета\n\n"
-            "Свяжитесь с @support для оплаты (временно)",
-            parse_mode='Markdown',
-            reply_markup=back_button()
-        )
-    
-    elif data == "favorites":
-        # Пока заглушка
-        await query.edit_message_text(
-            "⭐ *Избранное*\n\n"
-            "Здесь будут сохранённые вами рецепты.\n\n"
-            "Чтобы добавить рецепт в избранное, нажмите 🤍 под рецептом.",
-            parse_mode='Markdown',
-            reply_markup=back_button()
-        )
-    
-    elif data == "random_recipe":
-        # Пока заглушка
-        await query.edit_message_text(
-            "🍽 *Случайный рецепт*\n\n"
-            "Здесь будет случайный рецепт из вашей подборки.",
-            parse_mode='Markdown',
-            reply_markup=back_button()
-        )
-    
-    elif data.startswith("price_"):
-        # Обработка выбора фильтра
-        tg_id = str(query.from_user.id)
-        price_value = data.replace("price_", "")
-        
-        users = load_users()
-        user_index = get_user_index(tg_id)
-        
-        if user_index is not None:
-            if price_value == "clear":
-                users[user_index]['price_filter'] = None
-                await query.edit_message_text("✅ Фильтр по цене сброшен.", reply_markup=main_menu())
-            else:
-                users[user_index]['price_filter'] = int(price_value)
-                save_users(users)
-                await query.edit_message_text(
-                    f"✅ Установлен фильтр: до {price_value} руб.",
-                    reply_markup=main_menu()
-                )
-    
-    elif data == "cancel":
-        await query.edit_message_text("Действие отменено.", reply_markup=main_menu())
-
-# ========== ЗАПУСК ==========
-def main():
-    # Создаём приложение
-    application = Application.builder().token(TOKEN).build()
-    
-    # Регистрируем обработчики команд
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("menu", menu))
-    
-    # Регистрируем обработчик кнопок
-    application.add_handler(CallbackQueryHandler(button_handler))
-    
-    # Запускаем бота
-    print("Бот запущен")
-    application.run_polling()
-
-if __name__ == '__main__':
-=======
 import random
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -197,232 +7,603 @@ from telegram.ext import (
 )
 
 from config import TOKEN, ADMIN_IDS
-
-from services.json_db import (
-    load_recipes, save_recipes,
-    load_users, save_users, get_user
+from services.json_db import load_recipes, save_recipes, load_users, save_users, get_user
+from keyboards.keyboards import (
+    main_menu, admin_menu, cancel_menu,
+    recipe_menu_free, recipe_menu_premium,
+    price_filter_menu,
 )
+from states.states import ADD_TITLE, ADD_DESCRIPTION, ADD_INGREDIENTS, ADD_IMAGE
 
-from keyboards.keyboards import main_menu, admin_menu
-from states.states import *
-
-
-def build_recipe_text(recipe):
-    ing_text = ""
-    total = 0
-
-    for i in recipe["ingredients"]:
-        ing_text += f"• {i['title']} ({i['amount']}) - {i['price']}₽\n"
-        total += i["price"]
-
-    return (
-        f"🍽 {recipe['title']}\n\n"
-        f"{recipe['description']}\n\n"
-        f"💰 {total}₽\n\n"
-        f"{ing_text}"
-    )
+# Номер телефона для оплаты
+PAYMENT_PHONE = "+7 900 000 00 00"
+PAYMENT_AMOUNT = "199₽/мес"
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ──────────────────────────── helpers ────────────────────────────
 
-    tg_id = str(update.effective_user.id)
-
-    if get_user(tg_id) is None:
+def get_or_create_user(tg_id: str):
+    user = get_user(tg_id)
+    if user is None:
         users = load_users()
-        users.append({
+        user = {
             "tg_id": tg_id,
             "subscriber": False,
             "favorites": [],
-            "recipes_viewed": 0
-        })
+            "recipes_viewed": 0,
+            "price_filter": None,
+            "awaiting_payment": False,
+        }
+        users.append(user)
         save_users(users)
+    return user
 
-    recipes = load_recipes()
 
-    if not recipes:
-        return await update.message.reply_text("Нет рецептов")
+def update_user(tg_id: str, **fields):
+    users = load_users()
+    for u in users:
+        if u["tg_id"] == tg_id:
+            u.update(fields)
+            save_users(users)
+            return u
+    return None
 
-    recipe = random.choice(recipes)
 
-    text = build_recipe_text(recipe)
+def is_premium(user) -> bool:
+    return user.get("subscriber", False) or int(user["tg_id"]) in ADMIN_IDS
 
-    await update.message.reply_photo(
-        photo=recipe["photo"],
-        caption=text,
-        reply_markup=main_menu(update.effective_user.id)
+
+def build_recipe_text(recipe) -> str:
+    ingredients = recipe.get("ingredients", [])
+    ing_text = ""
+    total = recipe.get("total_price", 0) or sum(i.get("price", 0) for i in ingredients)
+
+    for i in ingredients:
+        name   = i.get("title") or i.get("name", "")
+        weight = i.get("weight")
+        price  = i.get("price", 0)
+        line   = f"• {name}"
+        if weight:
+            line += f" — {weight}г"
+        line += f" — {price}₽\n"
+        ing_text += line
+
+    return (
+        f"🍽 *{recipe['title']}*\n\n"
+        f"{recipe['description']}\n\n"
+        f"💰 Стоимость: {total}₽\n\n"
+        f"🥕 Ингредиенты:\n{ing_text}"
     )
 
 
-async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ──────────────────────────── /start ─────────────────────────────
 
-    q = update.callback_query
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tg_id = str(update.effective_user.id)
+    user  = get_or_create_user(tg_id)
+    name  = update.effective_user.first_name
+    premium = is_premium(user)
+    viewed  = user.get("recipes_viewed", 0)
+
+    if premium:
+        text = (
+            f"👋 Привет, {name}!\n\n"
+            f"Я FoodPlan бот. Помогу тебе с выбором блюд и планированием бюджета.\n\n"
+            f"⭐ У тебя активна премиум-подписка."
+        )
+    else:
+        left = max(0, 3 - viewed)
+        text = (
+            f"👋 Привет, {name}!\n\n"
+            f"Я FoodPlan бот. Помогу тебе с выбором блюд и планированием бюджета.\n\n"
+            f"У тебя есть {left} бесплатных рецепт(а), затем нужно оформить подписку."
+        )
+
+    await update.message.reply_text(
+        text,
+        reply_markup=main_menu(premium, viewed)
+    )
+
+
+# ──────────────────────────── /admin ─────────────────────────────
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ У вас нет доступа.")
+        return
+    await update.message.reply_text("👑 Админ-панель", reply_markup=admin_menu())
+
+
+# ──────────────────── обработчик скриншотов оплаты ───────────────
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ловит фото от пользователей, ожидающих подтверждения подписки."""
+    tg_id = str(update.effective_user.id)
+    user  = get_user(tg_id)
+
+    if not user or not user.get("awaiting_payment"):
+        return  # не наш кейс
+
+    # Снять флаг ожидания
+    update_user(tg_id, awaiting_payment=False)
+
+    photo     = update.message.photo[-1]
+    user_name = update.effective_user.full_name
+    user_link = f"@{update.effective_user.username}" if update.effective_user.username else f"ID {tg_id}"
+
+    # Уведомить всех админов со скриншотом и кнопкой одобрения
+    for admin_id in ADMIN_IDS:
+        try:
+            await context.bot.send_photo(
+                chat_id=admin_id,
+                photo=photo.file_id,
+                caption=(
+                    f"💳 Запрос на подписку\n\n"
+                    f"Пользователь: {user_name} ({user_link})\n"
+                    f"ID: {tg_id}"
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(
+                        f"✅ Одобрить подписку",
+                        callback_data=f"approve_sub_{tg_id}"
+                    )],
+                    [InlineKeyboardButton(
+                        f"❌ Отклонить",
+                        callback_data=f"reject_sub_{tg_id}"
+                    )],
+                ])
+            )
+        except Exception:
+            pass
+
+    await update.message.reply_text(
+        "✅ Скриншот отправлен на проверку.\n\n"
+        "Как только администратор подтвердит оплату, вам откроется полный доступ."
+    )
+
+
+# ──────────────────────────── callbacks ──────────────────────────
+
+async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q    = update.callback_query
     await q.answer()
     data = q.data
+    tg_id = str(q.from_user.id)
 
+    # ── Главное меню ──
+    if data == "back_to_menu":
+        user    = get_user(tg_id)
+        premium = is_premium(user) if user else False
+        viewed  = user.get("recipes_viewed", 0) if user else 0
+        await q.edit_message_text("Главное меню:", reply_markup=main_menu(premium, viewed))
 
-    if data == "admin_panel":
+    # ── Случайный рецепт ──
+    elif data == "random_recipe":
+        user    = get_or_create_user(tg_id)
+        premium = is_premium(user)
+        viewed  = user.get("recipes_viewed", 0)
 
-        if q.from_user.id not in ADMIN_IDS:
-            return await q.answer("Нет доступа", show_alert=True)
+        # Лимит для бесплатных
+        if not premium and viewed >= 3:
+            await q.edit_message_text(
+                "🔒 Вы использовали все 3 бесплатных рецепта.\n\n"
+                "Оформите подписку чтобы получить безлимитный доступ.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💰 Оформить подписку", callback_data="subscribe")]
+                ])
+            )
+            return
 
-        return await q.edit_message_text(
-            "👑 Админка",
-            reply_markup=admin_menu()
-        )
-
-
-    if data == "random_recipe":
+        price_filter = user.get("price_filter") if premium else None
+        fav_ids      = user.get("favorites", []) if premium else []
 
         recipes = load_recipes()
+        if price_filter:
+            filtered = [
+                r for r in recipes
+                if r.get("total_price", sum(i.get("price", 0) for i in r.get("ingredients", []))) <= price_filter
+            ]
+            recipes = filtered if filtered else recipes
+
         if not recipes:
-            return await q.edit_message_text("Нет рецептов")
+            await q.edit_message_text("📭 Рецептов пока нет.", reply_markup=main_menu(premium, viewed))
+            return
 
         recipe = random.choice(recipes)
+        text   = build_recipe_text(recipe)
 
-        text = build_recipe_text(recipe)
+        # Увеличить счётчик просмотров
+        update_user(tg_id, recipes_viewed=viewed + 1)
+        viewed += 1
 
-        await q.message.reply_photo(
-            photo=recipe["photo"],
-            caption=text
+        if premium:
+            in_fav = recipe["id"] in fav_ids
+            markup = recipe_menu_premium(recipe["id"], in_favorites=in_fav)
+        else:
+            markup = recipe_menu_free(recipe["id"])
+            if viewed >= 3:
+                # Последний бесплатный — добавить подсказку
+                markup = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 Ещё рецепт (нужна подписка)", callback_data="subscribe")],
+                    [InlineKeyboardButton("💰 Оформить подписку",           callback_data="subscribe")],
+                    [InlineKeyboardButton("⬅️ Назад",                       callback_data="back_to_menu")],
+                ])
+
+        image = recipe.get("image")
+        if image:
+            await q.message.reply_photo(photo=image, caption=text, parse_mode="Markdown", reply_markup=markup)
+        else:
+            await q.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
+
+    # ── Избранное (только премиум) ──
+    elif data == "favorites":
+        user = get_user(tg_id)
+        if not is_premium(user):
+            await q.answer("⭐ Доступно только для премиум-пользователей.", show_alert=True)
+            return
+        await _show_favorites(q, user)
+
+    elif data.startswith("show_recipe_"):
+        recipe_id = int(data.split("_")[2])
+        user      = get_user(tg_id)
+        fav_ids   = user.get("favorites", []) if user else []
+        recipe    = next((r for r in load_recipes() if r["id"] == recipe_id), None)
+        if not recipe:
+            await q.edit_message_text("Рецепт не найден.", reply_markup=main_menu(is_premium(user), user.get("recipes_viewed", 0)))
+            return
+        in_fav = recipe_id in fav_ids
+        kb = [
+            [InlineKeyboardButton(
+                "❤️ Убрать из избранного" if in_fav else "🤍 В избранное",
+                callback_data=f"unfav_{recipe_id}" if in_fav else f"fav_{recipe_id}"
+            )],
+            [InlineKeyboardButton("⬅️ К избранному", callback_data="favorites")],
+        ]
+        await q.edit_message_text(build_recipe_text(recipe), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+
+    elif data.startswith("fav_"):
+        recipe_id = int(data.split("_")[1])
+        user      = get_user(tg_id)
+        if not is_premium(user):
+            await q.answer("⭐ Доступно только для премиум-пользователей.", show_alert=True)
+            return
+        if recipe_id not in user.get("favorites", []):
+            update_user(tg_id, favorites=user.get("favorites", []) + [recipe_id])
+        recipe = next((r for r in load_recipes() if r["id"] == recipe_id), None)
+        if recipe:
+            await q.edit_message_text(
+                build_recipe_text(recipe), parse_mode="Markdown",
+                reply_markup=recipe_menu_premium(recipe_id, in_favorites=True)
+            )
+
+    elif data.startswith("unfav_"):
+        recipe_id = int(data.split("_")[1])
+        user      = get_user(tg_id)
+        new_favs  = [f for f in user.get("favorites", []) if f != recipe_id]
+        update_user(tg_id, favorites=new_favs)
+        recipe    = next((r for r in load_recipes() if r["id"] == recipe_id), None)
+        if recipe and q.message.caption is None:
+            # Пришли из списка избранного
+            user2 = get_user(tg_id)
+            await _show_favorites(q, user2)
+        elif recipe:
+            await q.edit_message_text(
+                build_recipe_text(recipe), parse_mode="Markdown",
+                reply_markup=recipe_menu_premium(recipe_id, in_favorites=False)
+            )
+
+    # ── Подписка ──
+    elif data == "subscribe":
+        await q.edit_message_text(
+            f"💰 *Оформление подписки FoodPlan*\n\n"
+            f"Стоимость: *{PAYMENT_AMOUNT}*\n\n"
+            f"После оплаты вам станут доступны:\n"
+            f"✅ Безлимитные рецепты\n"
+            f"✅ Избранное\n"
+            f"✅ Фильтр по цене\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Переведите оплату на номер:\n"
+            f"📱 *{PAYMENT_PHONE}*\n\n"
+            f"После оплаты нажмите кнопку ниже и пришлите скриншот чека.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📤 Отправить скриншот оплаты", callback_data="send_screenshot")],
+                [InlineKeyboardButton("⬅️ Назад", callback_data="back_to_menu")],
+            ])
         )
 
+    elif data == "send_screenshot":
+        update_user(tg_id, awaiting_payment=True)
+        await q.edit_message_text(
+            "📸 Пришлите скриншот подтверждения оплаты.\n\n"
+            "Как только администратор проверит платёж, вам откроется полный доступ.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("❌ Отмена", callback_data="cancel_payment")]
+            ])
+        )
 
-    if data == "recipe_list":
+    elif data == "cancel_payment":
+        update_user(tg_id, awaiting_payment=False)
+        user   = get_user(tg_id)
+        viewed = user.get("recipes_viewed", 0)
+        await q.edit_message_text("Главное меню:", reply_markup=main_menu(is_premium(user), viewed))
+
+    elif data == "sub_info":
+        await q.answer("⭐ Ваша подписка активна!", show_alert=True)
+
+    # ── Одобрение подписки (только для админов) ──
+    elif data.startswith("approve_sub_"):
+        if q.from_user.id not in ADMIN_IDS:
+            await q.answer("⛔ Нет доступа.", show_alert=True)
+            return
+        target_tg_id = data.replace("approve_sub_", "")
+        update_user(target_tg_id, subscriber=True, awaiting_payment=False)
+        await q.edit_message_caption(
+            caption=q.message.caption + "\n\n✅ Одобрено",
+            reply_markup=None
+        )
+        # Уведомить пользователя
+        try:
+            target_user = get_user(target_tg_id)
+            await context.bot.send_message(
+                chat_id=int(target_tg_id),
+                text=(
+                    "🎉 Ваша подписка подтверждена!\n\n"
+                    "Теперь вам доступны:\n"
+                    "✅ Безлимитные рецепты\n"
+                    "✅ Избранное\n"
+                    "✅ Фильтр по цене\n\n"
+                    "Нажмите /start чтобы открыть меню."
+                )
+            )
+        except Exception:
+            pass
+
+    elif data.startswith("reject_sub_"):
+        if q.from_user.id not in ADMIN_IDS:
+            await q.answer("⛔ Нет доступа.", show_alert=True)
+            return
+        target_tg_id = data.replace("reject_sub_", "")
+        update_user(target_tg_id, awaiting_payment=False)
+        await q.edit_message_caption(
+            caption=q.message.caption + "\n\n❌ Отклонено",
+            reply_markup=None
+        )
+        try:
+            await context.bot.send_message(
+                chat_id=int(target_tg_id),
+                text=(
+                    "❌ К сожалению, ваш платёж не был подтверждён.\n\n"
+                    "Если произошла ошибка, свяжитесь с поддержкой."
+                )
+            )
+        except Exception:
+            pass
+
+    # ── Фильтр по цене ──
+    elif data == "set_price_filter":
+        user = get_user(tg_id)
+        if not is_premium(user):
+            await q.answer("💸 Доступно только для премиум-пользователей.", show_alert=True)
+            return
+        current = user.get("price_filter")
+        status  = f"Текущий фильтр: до {current}₽" if current else "Фильтр не установлен"
+        await q.edit_message_text(
+            f"💸 *Фильтр по цене*\n\n{status}\n\nВыберите максимальную стоимость блюда:",
+            parse_mode="Markdown",
+            reply_markup=price_filter_menu()
+        )
+
+    elif data.startswith("price_"):
+        val = data.replace("price_", "")
+        update_user(tg_id, price_filter=None if val == "clear" else int(val))
+        msg = "✅ Фильтр сброшен." if val == "clear" else f"✅ Установлен фильтр: до {val}₽."
+        user   = get_user(tg_id)
+        viewed = user.get("recipes_viewed", 0)
+        await q.edit_message_text(msg, reply_markup=main_menu(is_premium(user), viewed))
+
+    # ── Админ: список / удаление ──
+    elif data == "recipe_list":
         recipes = load_recipes()
-
         if not recipes:
-            return await q.edit_message_text("Нет рецептов", reply_markup=admin_menu())
+            await q.edit_message_text("📭 Рецептов пока нет.", reply_markup=admin_menu())
+            return
+        text = "📋 *Рецепты:*\n\n"
+        for r in recipes:
+            total = r.get("total_price", sum(i.get("price", 0) for i in r.get("ingredients", [])))
+            text += f"{r['id']}. {r['title']} — {total}₽\n"
+        await q.edit_message_text(text, parse_mode="Markdown", reply_markup=admin_menu())
 
-        text = "\n".join([f"{r['id']}. {r['title']}" for r in recipes])
-
-        await q.edit_message_text(text, reply_markup=admin_menu())
-
-
-    if data == "delete_recipe":
-
+    elif data == "delete_recipe":
         recipes = load_recipes()
-
         if not recipes:
-            return await q.edit_message_text("Нет рецептов")
-
+            await q.edit_message_text("📭 Рецептов нет.", reply_markup=admin_menu())
+            return
         kb = [
-            [InlineKeyboardButton(f"❌ {r['title']}", callback_data=f"del_{r['id']}")]
+            [InlineKeyboardButton(f"❌ {r['title']}", callback_data=f"delete_{r['id']}")]
             for r in recipes
         ]
+        kb.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_admin")])
+        await q.edit_message_text("Выберите рецепт для удаления:", reply_markup=InlineKeyboardMarkup(kb))
 
-        kb.append([InlineKeyboardButton("⬅️ Назад", callback_data="admin_panel")])
-
-        await q.edit_message_text(
-            "Удалить рецепт:",
-            reply_markup=InlineKeyboardMarkup(kb)
-        )
-
-
-    if data.startswith("del_"):
-
-        rid = int(data.split("_")[1])
-
+    elif data.startswith("delete_"):
+        rid     = int(data.split("_")[1])
         recipes = [r for r in load_recipes() if r["id"] != rid]
-
         save_recipes(recipes)
+        await q.edit_message_text("✅ Рецепт удалён.", reply_markup=admin_menu())
 
-        await q.edit_message_text("Удалено", reply_markup=admin_menu())
+    elif data == "back_admin":
+        await q.edit_message_text("👑 Админ-панель", reply_markup=admin_menu())
+
+    elif data == "cancel_add":
+        context.user_data.clear()
+        await q.edit_message_text("❌ Добавление отменено.", reply_markup=admin_menu())
+        return ConversationHandler.END
 
 
-    if data == "back":
+async def _show_favorites(q, user):
+    fav_ids     = user.get("favorites", [])
+    if not fav_ids:
         await q.edit_message_text(
-            "Меню",
-            reply_markup=main_menu(q.from_user.id)
+            "⭐ Избранное пустое.\n\nДобавляй рецепты кнопкой 🤍 под рецептом.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Назад", callback_data="back_to_menu")]
+            ])
         )
+        return
+    recipes     = load_recipes()
+    fav_recipes = [r for r in recipes if r["id"] in fav_ids]
+    kb = [
+        [InlineKeyboardButton(f"🍽 {r['title']}", callback_data=f"show_recipe_{r['id']}")]
+        for r in fav_recipes
+    ]
+    kb.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_to_menu")])
+    await q.edit_message_text(
+        "⭐ *Избранное:*\n\nВыберите рецепт чтобы открыть:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
 
 
-    if data == "favorites":
-        await q.edit_message_text("⭐ Пусто")
+# ──────────────────── добавление рецепта (ConvHandler) ───────────
 
-
-    if data == "subscribe":
-        await q.edit_message_text("💰 Подписка: 199₽/мес")
-
-
-async def add_start(update, context):
+async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    await q.message.reply_text("Название:")
+    await q.answer()
+    await q.message.reply_text(
+        "Введите название рецепта:\n\n_(или нажмите кнопку ниже чтобы отменить)_",
+        parse_mode="Markdown",
+        reply_markup=cancel_menu()
+    )
     return ADD_TITLE
 
 
-async def add_title(update, context):
+async def add_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["title"] = update.message.text
-    await update.message.reply_text("Описание:")
+    await update.message.reply_text("Введите описание рецепта:", reply_markup=cancel_menu())
     return ADD_DESCRIPTION
 
 
-async def add_desc(update, context):
+async def add_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["description"] = update.message.text
-    await update.message.reply_text("Ингредиенты (title:amount:price):")
+    await update.message.reply_text(
+        "Введите ингредиенты, каждый с новой строки:\n\n"
+        "Формат: *Название:граммы:цена\\_за\\_кг*\n\n"
+        "Пример:\n`Куриное филе:300:450`\n`Сливки:200:180`\n\n"
+        "_Цена = граммы ÷ 1000 × цена за кг_",
+        parse_mode="Markdown",
+        reply_markup=cancel_menu()
+    )
     return ADD_INGREDIENTS
 
 
-async def add_ing(update, context):
+async def add_ing(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lines       = update.message.text.strip().split("\n")
+    ingredients = []
+    total       = 0
+    errors      = []
 
-    lines = update.message.text.split("\n")
-    ing = []
+    for line in lines:
+        parts = [p.strip() for p in line.split(":")]
+        if len(parts) == 3:
+            name, weight, ppkg = parts[0], int(parts[1]), int(parts[2])
+            price = round(weight / 1000 * ppkg)
+            ingredients.append({"name": name, "weight": weight, "price_per_kg": ppkg, "price": price})
+            total += price
+        elif len(parts) == 2:
+            name, price = parts[0], int(parts[1])
+            ingredients.append({"name": name, "price": price})
+            total += price
+        else:
+            errors.append(line)
 
-    for l in lines:
-        t, a, p = l.split(":")
-        ing.append({"title": t, "amount": a, "price": int(p)})
+    if errors:
+        await update.message.reply_text(
+            f"⚠️ Не удалось разобрать строки:\n" + "\n".join(errors) +
+            "\n\nПопробуйте снова. Формат: Название:граммы:цена_за_кг",
+            reply_markup=cancel_menu()
+        )
+        return ADD_INGREDIENTS
 
-    context.user_data["ingredients"] = ing
+    context.user_data["ingredients"] = ingredients
+    context.user_data["total_price"] = total
 
-    await update.message.reply_text("Фото:")
+    preview = "\n".join(
+        f"• {i['name']}{' — ' + str(i['weight']) + 'г' if i.get('weight') else ''} — {i['price']}₽"
+        for i in ingredients
+    )
+    await update.message.reply_text(
+        f"✅ Ингредиенты:\n\n{preview}\n\n💰 Итого: {total}₽\n\nОтправьте фото блюда:",
+        reply_markup=cancel_menu()
+    )
     return ADD_IMAGE
 
 
-async def add_img(update, context):
-
-    photo = update.message.photo[-1]
-
+async def add_img(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    photo   = update.message.photo[-1]
     recipes = load_recipes()
-
-    new_id = max([r["id"] for r in recipes], default=0) + 1
-
+    new_id  = max([r["id"] for r in recipes], default=0) + 1
     recipes.append({
-        "id": new_id,
-        "title": context.user_data["title"],
+        "id":          new_id,
+        "title":       context.user_data["title"],
         "description": context.user_data["description"],
         "ingredients": context.user_data["ingredients"],
-        "allergens": [],
-        "photo": photo.file_id
+        "total_price": context.user_data["total_price"],
+        "image":       photo.file_id,
     })
-
     save_recipes(recipes)
-
-    await update.message.reply_text("Добавлено!")
+    context.user_data.clear()
+    await update.message.reply_text("✅ Рецепт добавлен!", reply_markup=admin_menu())
     return ConversationHandler.END
 
 
-def main():
+async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await update.message.reply_text("❌ Добавление отменено.", reply_markup=admin_menu())
+    return ConversationHandler.END
 
+
+async def cancel_add_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    context.user_data.clear()
+    await q.edit_message_text("❌ Добавление отменено.", reply_markup=admin_menu())
+    return ConversationHandler.END
+
+
+# ──────────────────────────── main ───────────────────────────────
+
+def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-
-    app.add_handler(CallbackQueryHandler(callback))
+    app.add_handler(CommandHandler("admin", admin_command))
 
     conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(add_start, pattern="add_recipe")],
+        entry_points=[CallbackQueryHandler(add_start, pattern="^add_recipe$")],
         states={
-            ADD_TITLE: [MessageHandler(filters.TEXT, add_title)],
-            ADD_DESCRIPTION: [MessageHandler(filters.TEXT, add_desc)],
-            ADD_INGREDIENTS: [MessageHandler(filters.TEXT, add_ing)],
-            ADD_IMAGE: [MessageHandler(filters.PHOTO, add_img)],
+            ADD_TITLE:       [MessageHandler(filters.TEXT & ~filters.COMMAND, add_title)],
+            ADD_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_desc)],
+            ADD_INGREDIENTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_ing)],
+            ADD_IMAGE: [
+                MessageHandler(filters.PHOTO, add_img),
+                CallbackQueryHandler(cancel_add_button, pattern="^cancel_add$"),
+            ],
         },
-        fallbacks=[]
+        fallbacks=[
+            CommandHandler("cancel", cancel_conv),
+            CallbackQueryHandler(cancel_add_button, pattern="^cancel_add$"),
+        ],
+        per_message=False
     )
 
     app.add_handler(conv)
+    # Скриншоты оплаты — вне ConversationHandler
+    app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, handle_photo))
+    app.add_handler(CallbackQueryHandler(callback))
 
     print("Bot started")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
