@@ -16,6 +16,12 @@ from handlers.admin import (
     add_ingredients, add_image, cancel
 )
 
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
 
 async def error_handler(update, context):
     if isinstance(context.error, Forbidden):
@@ -26,18 +32,19 @@ async def error_handler(update, context):
 
 def main():
     request = HTTPXRequest(
-    connection_pool_size=8,
-    pool_timeout=30.0,
-    connect_timeout=30.0,
-    read_timeout=30.0,
-    write_timeout=30.0,
+        connection_pool_size=8,
+        pool_timeout=30.0,
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
     )
     app = Application.builder().token(TOKEN).request(request).build()
 
     app.add_handler(CommandHandler("start", start))
 
     conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(add_recipe_start, pattern="^add_recipe$")],
+        entry_points=[CallbackQueryHandler(
+            add_recipe_start, pattern="^add_recipe$")],
         states={
             ADD_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_title)],
             ADD_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_description)],
