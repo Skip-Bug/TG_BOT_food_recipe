@@ -33,9 +33,9 @@ SUBSCRIBE_TEXT = (
 def build_recipe_text(recipe):
     ing_text = ""
     total = 0
-    for i in recipe["ingredients"]:
-        ing_text += f"• {i['title']} ({i['amount']}) - {i['price']}₽\n"
-        total += i["price"]
+    for ing in recipe["ingredients"]:
+        ing_text += f"• {ing['title']} ({ing['amount']}) - {ing['price']}₽\n"
+        total += ing["price"]
     return (
         f"🍽 {recipe['title']}\n\n"
         f"{recipe['description']}\n\n"
@@ -152,7 +152,8 @@ async def button_handler(
                 query,
                 "⭐ У вас пока нет избранных рецептов",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Меню", callback_data="back_to_menu")]
+                    [InlineKeyboardButton(
+                        "⬅️ Меню", callback_data="back_to_menu")]
                 ])
             )
             return
@@ -162,10 +163,12 @@ async def button_handler(
             await safe_edit(query, "⭐ Избранные рецепты не найдены")
             return
         kb = [
-            [InlineKeyboardButton(f"🍽 {r['title']}", callback_data=f"show_{r['id']}")]
+            [InlineKeyboardButton(
+                f"🍽 {r['title']}", callback_data=f"show_{r['id']}")]
             for r in fav_recipes
         ]
-        kb.append([InlineKeyboardButton("⬅️ Меню", callback_data="back_to_menu")])
+        kb.append([InlineKeyboardButton(
+            "⬅️ Меню", callback_data="back_to_menu")])
         await safe_edit(query, "⭐ Избранное:", reply_markup=InlineKeyboardMarkup(kb))
 
     elif data.startswith("show_"):
@@ -180,7 +183,8 @@ async def button_handler(
         await query.message.reply_photo(
             photo=recipe["photo"],
             caption=text,
-            reply_markup=recipe_menu(query.from_user.id, recipe_id, is_favorite=True)
+            reply_markup=recipe_menu(
+                query.from_user.id, recipe_id, is_favorite=True)
         )
 
     elif data in ("subscribe", "buy_subscribe"):
