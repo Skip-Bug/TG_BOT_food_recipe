@@ -102,7 +102,7 @@ async def add_image(
     photo = update.message.photo[-1]
     recipes = load_recipes()
 
-    new_id = max((r["id"] for r in recipes), default=0) + 1
+    new_id = max((recipe["id"] for recipe in recipes), default=0) + 1
 
     recipe = {
         "id": new_id,
